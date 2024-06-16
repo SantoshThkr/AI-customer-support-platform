@@ -31,4 +31,3 @@ class UserUpdate(BaseModel):
     role: UserRole | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
-

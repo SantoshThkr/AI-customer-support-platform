@@ -1,0 +1,163 @@
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import Alert from '../components/Alert'
+import { PriorityBadge, SentimentBadge, StatusBadge } from '../components/Badges'
+import Spinner from '../components/Spinner'
+import TicketHistory from '../components/ticket/TicketHistory'
+import TicketProperties from '../components/ticket/TicketProperties'
+import { useAuth } from '../context/AuthContext'
+import { useCategories } from '../hooks/useCategories'
+import { getTicket, listTicketEvents, updateTicket } from '../services/tickets'
+import type { Ticket, TicketEvent } from '../types/ticket'
+import { getErrorMessage } from '../utils/errors'
+import { formatDateTime } from '../utils/format'
+
+export default function TicketDetailPage() {
+  const ticketId = Number(useParams().id)
+  const location = useLocation()
+  const { user } = useAuth()
+  const { labelFor } = useCategories()
+  const [ticket, setTicket] = useState<Ticket | null>(null)
+  const [events, setEvents] = useState<TicketEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const isStaff = user?.role === 'AGENT' || user?.role === 'ADMIN'
+  const justCreated = Boolean((location.state as { created?: boolean } | null)?.created)
+
+  const refreshEvents = useCallback(async () => {
+    setEvents(await listTicketEvents(ticketId))
+  }, [ticketId])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    Promise.all([getTicket(ticketId), listTicketEvents(ticketId)])
+      .then(([ticketData, eventData]) => {
+        if (cancelled) return
+        setTicket(ticketData)
+        setEvents(eventData)
+      })
+      .catch((err) => !cancelled && setError(getErrorMessage(err, 'Could not load the ticket')))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [ticketId])
+
+  const handleTicketUpdated = (updated: Ticket) => {
+    setTicket(updated)
+    refreshEvents().catch(() => undefined)
+  }
+
+  const closeTicket = async () => {
+    if (!ticket) return
+    setActionError(null)
+    try {
+      handleTicketUpdated(await updateTicket(ticket.id, { status: 'CLOSED' }))
+    } catch (err) {
+      setActionError(getErrorMessage(err))
+    }
+  }
+
+  if (loading) {
+    return <Spinner label="Loading ticket…" />
+  }
+  if (error || !ticket || !user) {
+    return (
+      <div className="space-y-4">
+        <Alert>{error ?? 'Ticket not found'}</Alert>
+        <Link to="/dashboard" className="text-sm text-indigo-600 hover:underline">
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
+
+  const canWorkOn =
+    user.role === 'ADMIN' || (user.role === 'AGENT' && (!ticket.assigned_agent || ticket.assigned_agent.id === user.id))
+  const isClosed = ticket.status === 'CLOSED'
+
+  return (
+    <div className="space-y-4">
+      {justCreated && <Alert kind="success">Your ticket has been submitted. We'll get back to you soon.</Alert>}
+
+      <div>
+        <Link to={isStaff ? '/dashboard' : '/tickets'} className="text-sm text-indigo-600 hover:underline">
+          ← Back to tickets
+        </Link>
+        <h1 className="mt-2 text-xl font-semibold">
+          <span className="mr-2 text-slate-400">#{ticket.id}</span>
+          {ticket.subject}
+        </h1>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+          <StatusBadge status={ticket.status} />
+          <PriorityBadge priority={ticket.priority} />
+          {isStaff && <span>{labelFor(ticket.category)}</span>}
+          <span>· Opened {formatDateTime(ticket.created_at)}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          {isStaff && ticket.ai_summary && (
+            <section className="card border-indigo-100 bg-indigo-50/40 p-4">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-indigo-900">AI summary</h2>
+                {ticket.ai_sentiment && <SentimentBadge sentiment={ticket.ai_sentiment} />}
+              </div>
+              <p className="text-sm text-slate-700">{ticket.ai_summary}</p>
+            </section>
+          )}
+
+          <section className="card p-4">
+            <div className="mb-2 text-sm text-slate-500">
+              <span className="font-medium text-slate-800">{ticket.customer.name}</span> wrote:
+            </div>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{ticket.description}</p>
+          </section>
+
+          <section className="card p-4">
+            <h2 className="mb-3 text-sm font-semibold">History</h2>
+            <TicketHistory events={events} />
+          </section>
+        </div>
+
+        <aside className="space-y-4">
+          <section className="card space-y-3 p-4">
+            <h2 className="text-sm font-semibold">Details</h2>
+            {isStaff ? (
+              <>
+                {!canWorkOn && (
+                  <Alert kind="info">Assigned to {ticket.assigned_agent?.name}. Only they or an admin can change it.</Alert>
+                )}
+                <TicketProperties ticket={ticket} canEdit={canWorkOn} onUpdated={handleTicketUpdated} />
+              </>
+            ) : (
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Status</dt>
+                  <dd>
+                    <StatusBadge status={ticket.status} />
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Last updated</dt>
+                  <dd>{formatDateTime(ticket.updated_at)}</dd>
+                </div>
+                {actionError && <Alert>{actionError}</Alert>}
+                {!isClosed && (
+                  <button type="button" className="btn-secondary w-full" onClick={closeTicket}>
+                    Close ticket
+                  </button>
+                )}
+              </dl>
+            )}
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}

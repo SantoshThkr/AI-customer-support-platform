@@ -13,12 +13,16 @@ import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import create_engine, insert, select, text  # noqa: E402
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import User, UserRole  # noqa: E402
+from app.models import Ticket, User, UserRole  # noqa: E402
 from app.services.security import create_access_token, hash_password  # noqa: E402
+
+# Rows inserted by migrations (e.g. default categories) are restored after every truncate.
+SEEDED_TABLES = ("categories",)
+seeded_rows: dict[str, list[dict]] = {}
 
 PASSWORD = "password123"
 # Hashing once keeps the suite fast; bcrypt is intentionally slow.
@@ -42,6 +46,12 @@ def database():
         "script_location", os.path.join(os.path.dirname(__file__), "..", "alembic")
     )
     command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        for name in SEEDED_TABLES:
+            table = Base.metadata.tables[name]
+            rows = conn.execute(select(table).order_by(table.c.id)).mappings().all()
+            seeded_rows[name] = [{k: v for k, v in row.items() if k != "id"} for row in rows]
     yield
     engine.dispose()
 
@@ -51,6 +61,9 @@ def clean_tables(database):
     table_names = ", ".join(table.name for table in Base.metadata.sorted_tables)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {table_names} RESTART IDENTITY CASCADE"))
+        for name, rows in seeded_rows.items():
+            if rows:
+                conn.execute(insert(Base.metadata.tables[name]), rows)
     yield
 
 
@@ -110,3 +123,20 @@ def agent(make_user):
 @pytest.fixture
 def admin(make_user):
     return make_user(UserRole.ADMIN, name="Ada Admin")
+
+
+@pytest.fixture
+def make_ticket(db):
+    def _make_ticket(customer: User, **fields) -> Ticket:
+        ticket = Ticket(
+            customer_id=customer.id,
+            subject=fields.pop("subject", "Cannot log in"),
+            description=fields.pop("description", "I get an error every time I try to sign in."),
+            **fields,
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        return ticket
+
+    return _make_ticket

@@ -40,9 +40,7 @@ def list_users(
 def list_agents(db: Session = Depends(get_db), _: User = Depends(require_staff)):
     """Active support staff who can be assigned tickets."""
     return db.scalars(
-        select(User)
-        .where(User.role.in_(STAFF_ROLES), User.is_active.is_(True))
-        .order_by(User.name)
+        select(User).where(User.role.in_(STAFF_ROLES), User.is_active.is_(True)).order_by(User.name)
     ).all()
 
 

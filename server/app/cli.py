@@ -1,6 +1,6 @@
 """Small management commands.
 
-    python -m app.cli create-user --email admin@example.com --name "Admin" --role ADMIN
+python -m app.cli create-user --email admin@example.com --name "Admin" --role ADMIN
 """
 
 import argparse
