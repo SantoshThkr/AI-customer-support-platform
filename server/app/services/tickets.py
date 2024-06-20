@@ -7,10 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     CLOSED_STATUSES,
+    STAFF_ROLES,
     Category,
     Ticket,
+    TicketAssignment,
     TicketEvent,
     TicketEventType,
+    TicketMessage,
     TicketPriority,
     TicketStatus,
     User,
@@ -209,3 +212,89 @@ def change_category(db: Session, ticket: Ticket, user: User, category_code: str)
         **{"from": ticket.category, "to": category_code},
     )
     ticket.category = category_code
+
+
+def list_messages(db: Session, ticket: Ticket, user: User) -> list[TicketMessage]:
+    query = select(TicketMessage).where(TicketMessage.ticket_id == ticket.id)
+    if not user.is_staff:
+        query = query.where(TicketMessage.is_internal.is_(False))
+    return list(db.scalars(query.order_by(TicketMessage.created_at, TicketMessage.id)).all())
+
+
+def add_message(
+    db: Session, ticket: Ticket, user: User, text: str, is_internal: bool = False
+) -> TicketMessage:
+    if is_internal and not user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only support staff can add internal notes",
+        )
+    if not user.is_staff and ticket.status == TicketStatus.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This ticket is closed. Please open a new ticket.",
+        )
+    # Any agent can leave an internal note; replying to the customer is limited
+    # to whoever is working on the ticket.
+    if user.is_staff and not is_internal:
+        ensure_can_work_on(user, ticket)
+
+    message = TicketMessage(
+        ticket_id=ticket.id, sender_id=user.id, message=text.strip(), is_internal=is_internal
+    )
+    db.add(message)
+    db.flush()
+
+    record_event(
+        db,
+        ticket,
+        user,
+        TicketEventType.MESSAGE_ADDED,
+        message_id=message.id,
+        is_internal=is_internal,
+    )
+
+    if not user.is_staff and ticket.status in (
+        TicketStatus.WAITING_FOR_CUSTOMER,
+        TicketStatus.RESOLVED,
+    ):
+        reopened = TicketStatus.IN_PROGRESS if ticket.assigned_agent_id else TicketStatus.OPEN
+        change_status(db, ticket, user, reopened)
+
+    ticket.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def assign_ticket(db: Session, ticket: Ticket, user: User, agent_id: int | None) -> Ticket:
+    ensure_can_work_on(user, ticket)
+    if ticket.assigned_agent_id == agent_id:
+        return ticket
+
+    agent = None
+    if agent_id is not None:
+        agent = db.get(User, agent_id)
+        if agent is None or agent.role not in STAFF_ROLES or not agent.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tickets can only be assigned to active support agents",
+            )
+
+    previous_agent_id = ticket.assigned_agent_id
+    ticket.assigned_agent_id = agent_id
+    if agent is not None:
+        db.add(TicketAssignment(ticket_id=ticket.id, agent_id=agent.id, assigned_by_id=user.id))
+
+    record_event(
+        db,
+        ticket,
+        user,
+        TicketEventType.TICKET_ASSIGNED,
+        agent_id=agent_id,
+        agent_name=agent.name if agent else None,
+        previous_agent_id=previous_agent_id,
+    )
+    db.commit()
+    db.refresh(ticket)
+    return ticket

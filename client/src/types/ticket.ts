@@ -61,3 +61,12 @@ export interface TicketFilters {
   page?: number
   page_size?: number
 }
+
+export interface TicketMessage {
+  id: number
+  ticket_id: number
+  sender: UserBrief
+  message: string
+  is_internal: boolean
+  created_at: string
+}

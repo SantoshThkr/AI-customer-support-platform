@@ -3,12 +3,16 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import Alert from '../components/Alert'
 import { PriorityBadge, SentimentBadge, StatusBadge } from '../components/Badges'
 import Spinner from '../components/Spinner'
+import AssignControl from '../components/ticket/AssignControl'
+import Conversation from '../components/ticket/Conversation'
+import ReplyBox from '../components/ticket/ReplyBox'
 import TicketHistory from '../components/ticket/TicketHistory'
 import TicketProperties from '../components/ticket/TicketProperties'
 import { useAuth } from '../context/AuthContext'
+import { useAgents } from '../hooks/useAgents'
 import { useCategories } from '../hooks/useCategories'
-import { getTicket, listTicketEvents, updateTicket } from '../services/tickets'
-import type { Ticket, TicketEvent } from '../types/ticket'
+import { addMessage, getTicket, listMessages, listTicketEvents, updateTicket } from '../services/tickets'
+import type { Ticket, TicketEvent, TicketMessage } from '../types/ticket'
 import { getErrorMessage } from '../utils/errors'
 import { formatDateTime } from '../utils/format'
 
@@ -19,11 +23,14 @@ export default function TicketDetailPage() {
   const { labelFor } = useCategories()
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [events, setEvents] = useState<TicketEvent[]>([])
+  const [messages, setMessages] = useState<TicketMessage[]>([])
+  const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const isStaff = user?.role === 'AGENT' || user?.role === 'ADMIN'
+  const agents = useAgents(isStaff)
   const justCreated = Boolean((location.state as { created?: boolean } | null)?.created)
 
   const refreshEvents = useCallback(async () => {
@@ -34,10 +41,11 @@ export default function TicketDetailPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    Promise.all([getTicket(ticketId), listTicketEvents(ticketId)])
-      .then(([ticketData, eventData]) => {
+    Promise.all([getTicket(ticketId), listMessages(ticketId), listTicketEvents(ticketId)])
+      .then(([ticketData, messageData, eventData]) => {
         if (cancelled) return
         setTicket(ticketData)
+        setMessages(messageData)
         setEvents(eventData)
       })
       .catch((err) => !cancelled && setError(getErrorMessage(err, 'Could not load the ticket')))
@@ -50,6 +58,15 @@ export default function TicketDetailPage() {
   const handleTicketUpdated = (updated: Ticket) => {
     setTicket(updated)
     refreshEvents().catch(() => undefined)
+  }
+
+  const sendMessage = async (text: string, isInternal: boolean) => {
+    const message = await addMessage(ticketId, text, isInternal)
+    setMessages((current) => [...current, message])
+    // A customer reply can reopen the ticket, so refresh the status and history.
+    const [ticketData, eventData] = await Promise.all([getTicket(ticketId), listTicketEvents(ticketId)])
+    setTicket(ticketData)
+    setEvents(eventData)
   }
 
   const closeTicket = async () => {
@@ -112,12 +129,23 @@ export default function TicketDetailPage() {
             </section>
           )}
 
-          <section className="card p-4">
-            <div className="mb-2 text-sm text-slate-500">
-              <span className="font-medium text-slate-800">{ticket.customer.name}</span> wrote:
-            </div>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{ticket.description}</p>
+          <section>
+            <h2 className="sr-only">Conversation</h2>
+            <Conversation ticket={ticket} messages={messages} />
           </section>
+
+          {isStaff || !isClosed ? (
+            <ReplyBox
+              draft={draft}
+              onDraftChange={setDraft}
+              onSend={sendMessage}
+              allowInternal={isStaff}
+              canReply={!isStaff || canWorkOn}
+              disabledReason="This ticket is assigned to another agent. You can still leave an internal note."
+            />
+          ) : (
+            <Alert kind="info">This ticket is closed. If you still need help, please open a new ticket.</Alert>
+          )}
 
           <section className="card p-4">
             <h2 className="mb-3 text-sm font-semibold">History</h2>
@@ -133,6 +161,13 @@ export default function TicketDetailPage() {
                 {!canWorkOn && (
                   <Alert kind="info">Assigned to {ticket.assigned_agent?.name}. Only they or an admin can change it.</Alert>
                 )}
+                <AssignControl
+                  ticket={ticket}
+                  currentUser={user}
+                  agents={agents}
+                  canEdit={canWorkOn}
+                  onUpdated={handleTicketUpdated}
+                />
                 <TicketProperties ticket={ticket} canEdit={canWorkOn} onUpdated={handleTicketUpdated} />
               </>
             ) : (
@@ -142,6 +177,10 @@ export default function TicketDetailPage() {
                   <dd>
                     <StatusBadge status={ticket.status} />
                   </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Assigned to</dt>
+                  <dd>{ticket.assigned_agent?.name ?? 'Waiting for an agent'}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Last updated</dt>

@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     Computed,
     DateTime,
     Enum,
@@ -93,6 +94,39 @@ class Ticket(TimestampMixin, Base):
     assigned_agent: Mapped[User | None] = relationship(
         foreign_keys=[assigned_agent_id], lazy="joined"
     )
+    messages: Mapped[list["TicketMessage"]] = relationship(
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TicketMessage.created_at",
+    )
+
+
+class TicketMessage(Base):
+    __tablename__ = "ticket_messages"
+    __table_args__ = (Index("ix_ticket_messages_ticket_created", "ticket_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"))
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    is_internal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket: Mapped[Ticket] = relationship(back_populates="messages")
+    sender: Mapped[User] = relationship(lazy="joined")
+
+
+class TicketAssignment(Base):
+    """One row per assignment, so we keep a record of who worked on a ticket."""
+
+    __tablename__ = "ticket_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    assigned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class TicketEvent(Base):

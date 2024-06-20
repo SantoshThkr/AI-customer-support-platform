@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies.auth import get_current_user, require_admin, require_roles
+from app.dependencies.auth import get_current_user, require_admin, require_roles, require_staff
 from app.dependencies.tickets import get_accessible_ticket
 from app.models import (
     Ticket,
@@ -17,6 +17,7 @@ from app.models import (
     UserRole,
 )
 from app.schemas.common import Page
+from app.schemas.message import AssignRequest, MessageCreate, MessageOut
 from app.schemas.ticket import TicketCreate, TicketEventOut, TicketOut, TicketUpdate
 from app.services import tickets as ticket_service
 from app.services.tickets import TicketFilters
@@ -108,6 +109,38 @@ def update_ticket(
 
     db.commit()
     db.refresh(ticket)
+    return serialize_ticket(ticket, user)
+
+
+@router.get("/{ticket_id}/messages", response_model=list[MessageOut])
+def list_messages(
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return ticket_service.list_messages(db, ticket, user)
+
+
+@router.post(
+    "/{ticket_id}/messages", response_model=MessageOut, status_code=status.HTTP_201_CREATED
+)
+def add_message(
+    payload: MessageCreate,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return ticket_service.add_message(db, ticket, user, payload.message, payload.is_internal)
+
+
+@router.post("/{ticket_id}/assign", response_model=TicketOut)
+def assign_ticket(
+    payload: AssignRequest,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    ticket = ticket_service.assign_ticket(db, ticket, user, payload.agent_id)
     return serialize_ticket(ticket, user)
 
 
