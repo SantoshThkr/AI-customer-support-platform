@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import auth, categories, tickets, users
+from app.routers import admin, auth, categories, tickets, users
 
 logging.basicConfig(
     level=settings.log_level,
@@ -28,6 +28,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(tickets.router)
 app.include_router(categories.router)
+app.include_router(admin.router)
 
 
 @app.exception_handler(Exception)

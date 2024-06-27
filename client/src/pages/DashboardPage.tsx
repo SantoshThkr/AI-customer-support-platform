@@ -1,10 +1,8 @@
 import { useAuth } from '../context/AuthContext'
+import AgentDashboard from './AgentDashboard'
+import CustomerDashboard from './CustomerDashboard'
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  return (
-    <div>
-      <h1 className="text-xl font-semibold">Welcome, {user?.name}</h1>
-    </div>
-  )
+  return user?.role === 'CUSTOMER' ? <CustomerDashboard /> : <AgentDashboard />
 }

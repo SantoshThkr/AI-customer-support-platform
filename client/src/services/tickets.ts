@@ -6,6 +6,7 @@ import type {
   TicketFilters,
   TicketMessage,
   TicketPriority,
+  TicketStats,
   TicketStatus,
 } from '../types/ticket'
 
@@ -77,5 +78,10 @@ export async function addMessage(ticketId: number, message: string, isInternal =
 
 export async function assignTicket(ticketId: number, agentId: number | null) {
   const { data } = await api.post<Ticket>(`/tickets/${ticketId}/assign`, { agent_id: agentId })
+  return data
+}
+
+export async function getTicketStats() {
+  const { data } = await api.get<TicketStats>('/tickets/stats')
   return data
 }

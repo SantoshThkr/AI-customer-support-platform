@@ -44,3 +44,11 @@ class TicketEventOut(BaseModel):
     user: UserBrief | None
     metadata: dict[str, Any] = Field(validation_alias="metadata_")
     created_at: datetime
+
+
+class TicketStats(BaseModel):
+    by_status: dict[TicketStatus, int]
+    # The fields below only count unresolved tickets and are always 0 for customers.
+    assigned_to_me: int = 0
+    unassigned: int = 0
+    urgent: int = 0

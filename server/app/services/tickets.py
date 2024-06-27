@@ -110,6 +110,29 @@ def list_tickets(db: Session, user: User, filters: TicketFilters) -> tuple[list[
     return list(tickets), total
 
 
+def ticket_stats(db: Session, user: User) -> dict:
+    scope = []
+    if not user.is_staff:
+        scope.append(Ticket.customer_id == user.id)
+
+    rows = db.execute(
+        select(Ticket.status, func.count(Ticket.id)).where(*scope).group_by(Ticket.status)
+    ).all()
+    stats = {"by_status": {ticket_status: 0 for ticket_status in TicketStatus}}
+    stats["by_status"].update(dict(rows))
+
+    if user.is_staff:
+        unresolved = Ticket.status.not_in(CLOSED_STATUSES)
+
+        def count(*conditions) -> int:
+            return db.scalar(select(func.count(Ticket.id)).where(unresolved, *conditions))
+
+        stats["assigned_to_me"] = count(Ticket.assigned_agent_id == user.id)
+        stats["unassigned"] = count(Ticket.assigned_agent_id.is_(None))
+        stats["urgent"] = count(Ticket.priority == TicketPriority.URGENT)
+    return stats
+
+
 def record_event(
     db: Session,
     ticket: Ticket,

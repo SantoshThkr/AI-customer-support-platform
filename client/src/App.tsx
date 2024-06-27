@@ -9,6 +9,7 @@ import NotFoundPage from './pages/NotFoundPage'
 import RegisterPage from './pages/RegisterPage'
 import TicketDetailPage from './pages/TicketDetailPage'
 import TicketsPage from './pages/TicketsPage'
+import AnalyticsPage from './pages/admin/AnalyticsPage'
 import UsersPage from './pages/admin/UsersPage'
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="/tickets/new" element={<NewTicketPage />} />
             </Route>
             <Route element={<ProtectedRoute roles={['ADMIN']} />}>
+              <Route path="/admin" element={<AnalyticsPage />} />
               <Route path="/admin/users" element={<UsersPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />

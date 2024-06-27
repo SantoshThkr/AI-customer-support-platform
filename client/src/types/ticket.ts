@@ -70,3 +70,10 @@ export interface TicketMessage {
   is_internal: boolean
   created_at: string
 }
+
+export interface TicketStats {
+  by_status: Record<TicketStatus, number>
+  assigned_to_me: number
+  unassigned: number
+  urgent: number
+}

@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import type { UserRole } from '../types/user'
 
@@ -10,10 +10,12 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', roles: ['CUSTOMER', 'AGENT', 'ADMIN'] },
+  { to: '/dashboard', label: 'Dashboard', roles: ['CUSTOMER'] },
+  { to: '/dashboard', label: 'Queue', roles: ['AGENT', 'ADMIN'] },
   { to: '/tickets', label: 'My tickets', roles: ['CUSTOMER'], end: true },
   { to: '/tickets/new', label: 'New ticket', roles: ['CUSTOMER'] },
   { to: '/tickets', label: 'All tickets', roles: ['AGENT', 'ADMIN'], end: true },
+  { to: '/admin', label: 'Analytics', roles: ['ADMIN'], end: true },
   { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
 ]
 
@@ -25,8 +27,14 @@ function navClass({ isActive }: { isActive: boolean }) {
 
 export default function Layout() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   if (!user) {
     return null
+  }
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login', { replace: true })
   }
 
   const items = NAV_ITEMS.filter((item) => item.roles.includes(user.role))
@@ -50,7 +58,7 @@ export default function Layout() {
                 {user.role.toLowerCase()}
               </span>
             </span>
-            <button type="button" onClick={logout} className="btn-secondary">
+            <button type="button" onClick={handleLogout} className="btn-secondary">
               Log out
             </button>
           </div>

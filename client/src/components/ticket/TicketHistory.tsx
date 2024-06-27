@@ -14,7 +14,9 @@ function describe(event: TicketEvent) {
     case 'CATEGORY_CHANGED':
       return `${actor} set category to ${humanize(String(meta.to))}`
     case 'TICKET_ASSIGNED':
-      return meta.agent_name ? `${actor} assigned the ticket to ${meta.agent_name}` : `${actor} unassigned the ticket`
+      if (!meta.agent_name) return `${actor} unassigned the ticket`
+      if (event.user && meta.agent_id === event.user.id) return `${actor} picked up the ticket`
+      return `${actor} assigned the ticket to ${meta.agent_name}`
     case 'MESSAGE_ADDED':
       return meta.is_internal ? `${actor} added an internal note` : `${actor} replied`
     case 'AI_ANALYSIS_COMPLETED':

@@ -18,7 +18,13 @@ from app.models import (
 )
 from app.schemas.common import Page
 from app.schemas.message import AssignRequest, MessageCreate, MessageOut
-from app.schemas.ticket import TicketCreate, TicketEventOut, TicketOut, TicketUpdate
+from app.schemas.ticket import (
+    TicketCreate,
+    TicketEventOut,
+    TicketOut,
+    TicketStats,
+    TicketUpdate,
+)
 from app.services import tickets as ticket_service
 from app.services.tickets import TicketFilters
 
@@ -72,6 +78,12 @@ def list_tickets(
     )
     tickets, total = ticket_service.list_tickets(db, user, filters)
     return Page.build([serialize_ticket(t, user) for t in tickets], total, page, page_size)
+
+
+@router.get("/stats", response_model=TicketStats)
+def get_ticket_stats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Ticket counts for the dashboard, scoped to what the current user can see."""
+    return ticket_service.ticket_stats(db, user)
 
 
 @router.get("/{ticket_id}", response_model=TicketOut)
