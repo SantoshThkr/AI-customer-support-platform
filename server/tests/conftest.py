@@ -15,10 +15,14 @@ from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, insert, select, text  # noqa: E402
 
+from app.ai import client as ai_client  # noqa: E402
+from app.config import settings  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
+from app.dependencies.ai import ai_rate_limiter  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Ticket, User, UserRole  # noqa: E402
 from app.services.security import create_access_token, hash_password  # noqa: E402
+from tests.fakes import FakeOpenAI  # noqa: E402
 
 # Rows inserted by migrations (e.g. default categories) are restored after every truncate.
 SEEDED_TABLES = ("categories",)
@@ -64,7 +68,17 @@ def clean_tables(database):
         for name, rows in seeded_rows.items():
             if rows:
                 conn.execute(insert(Base.metadata.tables[name]), rows)
+    ai_rate_limiter.reset()
     yield
+
+
+@pytest.fixture
+def fake_openai(monkeypatch):
+    """Turns AI on with a fake OpenAI client. Without this fixture AI is unconfigured."""
+    fake = FakeOpenAI()
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(ai_client, "get_client", lambda: fake)
+    return fake
 
 
 @pytest.fixture

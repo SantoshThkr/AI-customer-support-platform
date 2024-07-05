@@ -1,9 +1,10 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.ticket_analysis import analyze_new_ticket
 from app.database import get_db
 from app.dependencies.auth import get_current_user, require_admin, require_roles, require_staff
 from app.dependencies.tickets import get_accessible_ticket
@@ -42,10 +43,13 @@ def serialize_ticket(ticket: Ticket, user: User) -> TicketOut:
 @router.post("", response_model=TicketOut, status_code=status.HTTP_201_CREATED)
 def create_ticket(
     payload: TicketCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(UserRole.CUSTOMER)),
 ):
     ticket = ticket_service.create_ticket(db, user, payload)
+    # Runs after the response is sent; the ticket exists whether or not AI succeeds.
+    background_tasks.add_task(analyze_new_ticket, ticket.id)
     return serialize_ticket(ticket, user)
 
 

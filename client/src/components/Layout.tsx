@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/tickets', label: 'All tickets', roles: ['AGENT', 'ADMIN'], end: true },
   { to: '/admin', label: 'Analytics', roles: ['ADMIN'], end: true },
   { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
+  { to: '/admin/settings', label: 'Settings', roles: ['ADMIN'] },
 ]
 
 function navClass({ isActive }: { isActive: boolean }) {

@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import Alert from '../components/Alert'
 import { PriorityBadge, SentimentBadge, StatusBadge } from '../components/Badges'
 import Spinner from '../components/Spinner'
+import AIActions from '../components/ticket/AIActions'
 import AssignControl from '../components/ticket/AssignControl'
 import Conversation from '../components/ticket/Conversation'
 import ReplyBox from '../components/ticket/ReplyBox'
@@ -10,6 +11,7 @@ import TicketHistory from '../components/ticket/TicketHistory'
 import TicketProperties from '../components/ticket/TicketProperties'
 import { useAuth } from '../context/AuthContext'
 import { useAgents } from '../hooks/useAgents'
+import { useAIStatus } from '../hooks/useAIStatus'
 import { useCategories } from '../hooks/useCategories'
 import { addMessage, getTicket, listMessages, listTicketEvents, updateTicket } from '../services/tickets'
 import type { Ticket, TicketEvent, TicketMessage } from '../types/ticket'
@@ -31,6 +33,7 @@ export default function TicketDetailPage() {
 
   const isStaff = user?.role === 'AGENT' || user?.role === 'ADMIN'
   const agents = useAgents(isStaff)
+  const aiStatus = useAIStatus(isStaff)
   const justCreated = Boolean((location.state as { created?: boolean } | null)?.created)
 
   const refreshEvents = useCallback(async () => {
@@ -60,13 +63,17 @@ export default function TicketDetailPage() {
     refreshEvents().catch(() => undefined)
   }
 
+  const reloadTicket = async () => {
+    const [ticketData, eventData] = await Promise.all([getTicket(ticketId), listTicketEvents(ticketId)])
+    setTicket(ticketData)
+    setEvents(eventData)
+  }
+
   const sendMessage = async (text: string, isInternal: boolean) => {
     const message = await addMessage(ticketId, text, isInternal)
     setMessages((current) => [...current, message])
     // A customer reply can reopen the ticket, so refresh the status and history.
-    const [ticketData, eventData] = await Promise.all([getTicket(ticketId), listTicketEvents(ticketId)])
-    setTicket(ticketData)
-    setEvents(eventData)
+    await reloadTicket()
   }
 
   const closeTicket = async () => {
@@ -195,6 +202,13 @@ export default function TicketDetailPage() {
               </dl>
             )}
           </section>
+
+          {isStaff && (
+            <section className="card space-y-3 p-4">
+              <h2 className="text-sm font-semibold">AI assistant</h2>
+              <AIActions ticketId={ticket.id} status={aiStatus} onChanged={() => reloadTicket().catch(() => undefined)} />
+            </section>
+          )}
         </aside>
       </div>
     </div>

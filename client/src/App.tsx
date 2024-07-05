@@ -10,6 +10,7 @@ import RegisterPage from './pages/RegisterPage'
 import TicketDetailPage from './pages/TicketDetailPage'
 import TicketsPage from './pages/TicketsPage'
 import AnalyticsPage from './pages/admin/AnalyticsPage'
+import SettingsPage from './pages/admin/SettingsPage'
 import UsersPage from './pages/admin/UsersPage'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
             <Route element={<ProtectedRoute roles={['ADMIN']} />}>
               <Route path="/admin" element={<AnalyticsPage />} />
               <Route path="/admin/users" element={<UsersPage />} />
+              <Route path="/admin/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Route>

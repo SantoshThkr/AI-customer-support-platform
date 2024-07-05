@@ -4,8 +4,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.ai.client import AIServiceError, AIUnavailableError
 from app.config import settings
-from app.routers import admin, auth, categories, tickets, users
+from app.routers import admin, ai, auth, categories, tickets, users
 
 logging.basicConfig(
     level=settings.log_level,
@@ -29,6 +30,17 @@ app.include_router(users.router)
 app.include_router(tickets.router)
 app.include_router(categories.router)
 app.include_router(admin.router)
+app.include_router(ai.router)
+
+
+@app.exception_handler(AIUnavailableError)
+async def ai_unavailable_handler(request: Request, exc: AIUnavailableError):
+    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "ai_unavailable"})
+
+
+@app.exception_handler(AIServiceError)
+async def ai_service_error_handler(request: Request, exc: AIServiceError):
+    return JSONResponse(status_code=502, content={"detail": str(exc), "code": "ai_error"})
 
 
 @app.exception_handler(Exception)
