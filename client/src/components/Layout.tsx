@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/tickets', label: 'My tickets', roles: ['CUSTOMER'], end: true },
   { to: '/tickets/new', label: 'New ticket', roles: ['CUSTOMER'] },
   { to: '/tickets', label: 'All tickets', roles: ['AGENT', 'ADMIN'], end: true },
+  { to: '/knowledge', label: 'Knowledge base', roles: ['AGENT', 'ADMIN'] },
   { to: '/admin', label: 'Analytics', roles: ['ADMIN'], end: true },
   { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
   { to: '/admin/settings', label: 'Settings', roles: ['ADMIN'] },

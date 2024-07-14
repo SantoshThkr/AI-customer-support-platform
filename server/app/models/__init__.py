@@ -1,5 +1,11 @@
 from app.models.ai_usage import AIOperation, AIUsage
 from app.models.category import Category
+from app.models.knowledge import (
+    DocumentFileType,
+    DocumentStatus,
+    KnowledgeChunk,
+    KnowledgeDocument,
+)
 from app.models.system_setting import SystemSetting
 from app.models.ticket import (
     CLOSED_STATUSES,
@@ -20,6 +26,10 @@ __all__ = [
     "CLOSED_STATUSES",
     "STAFF_ROLES",
     "Category",
+    "DocumentFileType",
+    "DocumentStatus",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "Sentiment",
     "SystemSetting",
     "Ticket",

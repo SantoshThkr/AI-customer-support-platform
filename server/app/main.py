@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.ai.client import AIServiceError, AIUnavailableError
 from app.config import settings
-from app.routers import admin, ai, auth, categories, tickets, users
+from app.routers import admin, ai, auth, categories, knowledge, tickets, users
 
 logging.basicConfig(
     level=settings.log_level,
@@ -31,6 +31,7 @@ app.include_router(tickets.router)
 app.include_router(categories.router)
 app.include_router(admin.router)
 app.include_router(ai.router)
+app.include_router(knowledge.router)
 
 
 @app.exception_handler(AIUnavailableError)

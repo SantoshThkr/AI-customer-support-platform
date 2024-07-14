@@ -3,6 +3,8 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider } from './context/AuthContext'
 import DashboardPage from './pages/DashboardPage'
+import KnowledgeDocumentPage from './pages/KnowledgeDocumentPage'
+import KnowledgePage from './pages/KnowledgePage'
 import LoginPage from './pages/LoginPage'
 import NewTicketPage from './pages/NewTicketPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -27,6 +29,10 @@ export default function App() {
             <Route path="/tickets/:id" element={<TicketDetailPage />} />
             <Route element={<ProtectedRoute roles={['CUSTOMER']} />}>
               <Route path="/tickets/new" element={<NewTicketPage />} />
+            </Route>
+            <Route element={<ProtectedRoute roles={['AGENT', 'ADMIN']} />}>
+              <Route path="/knowledge" element={<KnowledgePage />} />
+              <Route path="/knowledge/:id" element={<KnowledgeDocumentPage />} />
             </Route>
             <Route element={<ProtectedRoute roles={['ADMIN']} />}>
               <Route path="/admin" element={<AnalyticsPage />} />

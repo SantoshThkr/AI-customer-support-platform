@@ -5,6 +5,7 @@ import { PriorityBadge, SentimentBadge, StatusBadge } from '../components/Badges
 import Spinner from '../components/Spinner'
 import AIActions from '../components/ticket/AIActions'
 import AssignControl from '../components/ticket/AssignControl'
+import KnowledgePanel from '../components/ticket/KnowledgePanel'
 import Conversation from '../components/ticket/Conversation'
 import ReplyBox from '../components/ticket/ReplyBox'
 import TicketHistory from '../components/ticket/TicketHistory'
@@ -207,6 +208,13 @@ export default function TicketDetailPage() {
             <section className="card space-y-3 p-4">
               <h2 className="text-sm font-semibold">AI assistant</h2>
               <AIActions ticketId={ticket.id} status={aiStatus} onChanged={() => reloadTicket().catch(() => undefined)} />
+            </section>
+          )}
+
+          {isStaff && (
+            <section className="card space-y-3 p-4">
+              <h2 className="text-sm font-semibold">Knowledge base</h2>
+              <KnowledgePanel initialQuery={ticket.subject} />
             </section>
           )}
         </aside>

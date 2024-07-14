@@ -1,16 +1,20 @@
 """Small management commands.
 
 python -m app.cli create-user --email admin@example.com --name "Admin" --role ADMIN
+python -m app.cli import-knowledge sample_data/knowledge
 """
 
 import argparse
 import getpass
 import sys
+from pathlib import Path
 
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import UserRole
+from app.models import KnowledgeDocument, UserRole
+from app.services import knowledge as knowledge_service
 from app.services.users import create_user
 
 
@@ -32,6 +36,39 @@ def create_user_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def import_knowledge_command(args: argparse.Namespace) -> int:
+    folder = Path(args.folder)
+    files = sorted(
+        path for path in folder.iterdir() if path.suffix.lower() in knowledge_service.FILE_TYPES
+    )
+    if not files:
+        print(f"No .txt, .md or .pdf files found in {folder}", file=sys.stderr)
+        return 1
+
+    with SessionLocal() as db:
+        existing = set(db.scalars(select(KnowledgeDocument.filename)).all())
+        for path in files:
+            if path.name in existing:
+                print(f"skip   {path.name} (already imported)")
+                continue
+            try:
+                with path.open("rb") as file_obj:
+                    file_type, text = knowledge_service.read_upload(file_obj, path.name)
+                document = knowledge_service.create_document(
+                    db,
+                    title=knowledge_service.default_title(path.name, text),
+                    text=text,
+                    file_type=file_type,
+                    filename=path.name,
+                    uploaded_by=None,
+                )
+            except HTTPException as exc:
+                print(f"error  {path.name}: {exc.detail}", file=sys.stderr)
+                continue
+            print(f"added  {path.name} ({document.chunk_count} chunks)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -42,6 +79,12 @@ def main() -> int:
     create.add_argument("--role", choices=[role.value for role in UserRole], default="CUSTOMER")
     create.add_argument("--password", help="Prompted for when omitted")
     create.set_defaults(handler=create_user_command)
+
+    importer = subcommands.add_parser(
+        "import-knowledge", help="Add every .txt/.md/.pdf file in a folder to the knowledge base"
+    )
+    importer.add_argument("folder")
+    importer.set_defaults(handler=import_knowledge_command)
 
     args = parser.parse_args()
     return args.handler(args)
