@@ -27,6 +27,11 @@ export async function createArticle(title: string, content: string) {
   return data
 }
 
+export async function regenerateEmbeddings(id: number) {
+  const { data } = await api.post<KnowledgeDocument>(`/knowledge/documents/${id}/embed`)
+  return data
+}
+
 export async function deleteDocument(id: number) {
   await api.delete(`/knowledge/documents/${id}`)
 }

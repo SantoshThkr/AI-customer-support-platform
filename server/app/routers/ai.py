@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.ai import ticket_analysis
-from app.ai.client import AIUnavailableError
+from app.ai.client import AIUnavailableError, ensure_ai_available
 from app.database import get_db
-from app.dependencies.ai import ai_request_user, ensure_ai_available
+from app.dependencies.ai import ai_request_user
 from app.dependencies.auth import require_staff
 from app.dependencies.tickets import get_accessible_ticket
 from app.models import Ticket, User

@@ -6,10 +6,24 @@ import EmptyState from '../components/EmptyState'
 import KnowledgeResults from '../components/KnowledgeResults'
 import Spinner from '../components/Spinner'
 import { useAuth } from '../context/AuthContext'
-import { createArticle, deleteDocument, listDocuments, searchKnowledge, uploadDocument } from '../services/knowledge'
+import {
+  createArticle,
+  deleteDocument,
+  listDocuments,
+  regenerateEmbeddings,
+  searchKnowledge,
+  uploadDocument,
+} from '../services/knowledge'
 import type { KnowledgeDocument, KnowledgeSearchResponse } from '../types/knowledge'
 import { getErrorMessage } from '../utils/errors'
-import { formatDate, humanize } from '../utils/format'
+import { formatDate } from '../utils/format'
+
+function statusLabel(document: KnowledgeDocument) {
+  if (document.status === 'PROCESSING') return 'Processing…'
+  if (document.status === 'FAILED') return 'Embedding failed'
+  if (document.chunk_count > 0 && document.embedded_chunk_count < document.chunk_count) return 'Keyword search only'
+  return 'Ready'
+}
 
 export default function KnowledgePage() {
   const { user } = useAuth()
@@ -25,6 +39,24 @@ export default function KnowledgePage() {
   useEffect(() => {
     load()
   }, [])
+
+  // Embeddings are generated in the background; refresh until they're done.
+  const processing = documents?.some((document) => document.status === 'PROCESSING')
+  useEffect(() => {
+    if (!processing) return
+    const timer = setTimeout(load, 3000)
+    return () => clearTimeout(timer)
+  }, [processing, documents])
+
+  const embed = async (document: KnowledgeDocument) => {
+    setError(null)
+    try {
+      const updated = await regenerateEmbeddings(document.id)
+      setDocuments((current) => current?.map((item) => (item.id === updated.id ? updated : item)) ?? null)
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not start embedding'))
+    }
+  }
 
   const remove = async (document: KnowledgeDocument) => {
     if (!window.confirm(`Delete "${document.title}"? This cannot be undone.`)) return
@@ -75,12 +107,22 @@ export default function KnowledgePage() {
                     </td>
                     <td className="hidden px-4 py-2 text-slate-600 sm:table-cell">{document.file_type}</td>
                     <td className="px-4 py-2">
-                      <span title={document.error_message ?? undefined}>{humanize(document.status)}</span>
+                      <span
+                        className={document.status === 'FAILED' ? 'text-red-700' : 'text-slate-700'}
+                        title={document.error_message ?? undefined}
+                      >
+                        {statusLabel(document)}
+                      </span>
                     </td>
                     <td className="hidden px-4 py-2 text-slate-600 md:table-cell">{document.chunk_count}</td>
                     <td className="hidden px-4 py-2 text-slate-600 md:table-cell">{formatDate(document.created_at)}</td>
                     {isAdmin && (
-                      <td className="px-4 py-2 text-right">
+                      <td className="whitespace-nowrap px-4 py-2 text-right">
+                        {document.status !== 'PROCESSING' && document.embedded_chunk_count < document.chunk_count && (
+                          <button type="button" className="mr-3 text-sm text-indigo-600 hover:underline" onClick={() => embed(document)}>
+                            Generate embeddings
+                          </button>
+                        )}
                         <button type="button" className="text-sm text-red-600 hover:underline" onClick={() => remove(document)}>
                           Delete
                         </button>

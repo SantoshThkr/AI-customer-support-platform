@@ -29,7 +29,8 @@ export default function KnowledgeDocumentPage() {
         <article className="card p-6">
           <h1 className="text-xl font-semibold">{document.title}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {document.file_type} · {document.chunk_count} chunks · {humanize(document.status)} · updated{' '}
+            {document.file_type} · {document.chunk_count} chunks ({document.embedded_chunk_count} embedded) ·{' '}
+            {humanize(document.status)} · updated{' '}
             {formatDateTime(document.updated_at)}
           </p>
           {document.error_message && (

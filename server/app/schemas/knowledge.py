@@ -17,6 +17,7 @@ class DocumentOut(BaseModel):
     status: DocumentStatus
     error_message: str | None
     chunk_count: int
+    embedded_chunk_count: int
     uploaded_by: UserBrief | None
     created_at: datetime
     updated_at: datetime

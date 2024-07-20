@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai import prompts
-from app.ai.client import AIError, AIServiceError, ai_is_configured, chat_completion
+from app.ai.client import AIError, AIServiceError, ai_available, ai_is_configured, chat_completion
 from app.ai.usage import record_usage
 from app.database import SessionLocal
 from app.models import (
@@ -135,8 +135,7 @@ def analyze_new_ticket(ticket_id: int) -> None:
         return
 
     with SessionLocal() as db:
-        system_settings = get_system_settings(db)
-        if not (system_settings.ai_enabled and system_settings.auto_analyze_tickets):
+        if not (ai_available(db) and get_system_settings(db).auto_analyze_tickets):
             return
         ticket = db.get(Ticket, ticket_id)
         if ticket is None:

@@ -3,8 +3,11 @@ from functools import lru_cache
 
 import openai
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.knowledge import EMBEDDING_DIMENSIONS
+from app.services.system_settings import get_system_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,21 @@ class AIServiceError(AIError):
 
 def ai_is_configured() -> bool:
     return bool(settings.openai_api_key)
+
+
+def ensure_ai_available(db: Session) -> None:
+    if not ai_is_configured():
+        raise AIUnavailableError("AI features are not configured on this server")
+    if not get_system_settings(db).ai_enabled:
+        raise AIUnavailableError("AI features have been turned off by an administrator")
+
+
+def ai_available(db: Session) -> bool:
+    try:
+        ensure_ai_available(db)
+    except AIUnavailableError:
+        return False
+    return True
 
 
 @lru_cache
@@ -68,5 +86,17 @@ def chat_completion(
 
     try:
         return client.chat.completions.create(**params)
+    except openai.OpenAIError as exc:
+        raise _provider_error(exc) from exc
+
+
+def create_embeddings(texts: list[str]):
+    client = get_client()
+    try:
+        return client.embeddings.create(
+            model=settings.openai_embedding_model,
+            input=texts,
+            dimensions=EMBEDDING_DIMENSIONS,
+        )
     except openai.OpenAIError as exc:
         raise _provider_error(exc) from exc

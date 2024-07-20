@@ -1,22 +1,14 @@
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.ai.client import AIUnavailableError, ai_is_configured
+from app.ai.client import ensure_ai_available
 from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import require_staff
 from app.models import User
 from app.services.rate_limit import RateLimiter
-from app.services.system_settings import get_system_settings
 
 ai_rate_limiter = RateLimiter(limit=settings.ai_requests_per_minute, window_seconds=60)
-
-
-def ensure_ai_available(db: Session) -> None:
-    if not ai_is_configured():
-        raise AIUnavailableError("AI features are not configured on this server")
-    if not get_system_settings(db).ai_enabled:
-        raise AIUnavailableError("AI features have been turned off by an administrator")
 
 
 def ai_request_user(db: Session = Depends(get_db), user: User = Depends(require_staff)) -> User:

@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Computed,
     DateTime,
@@ -20,6 +21,9 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from app.database import Base, TimestampMixin
 from app.models.user import User
+
+# Fixed by the database column; text-embedding-3 models are asked for this size.
+EMBEDDING_DIMENSIONS = 1536
 
 
 class DocumentFileType(str, enum.Enum):
@@ -64,6 +68,12 @@ class KnowledgeChunk(Base):
     __table_args__ = (
         UniqueConstraint("document_id", "chunk_index", name="uq_knowledge_chunks_document_index"),
         Index("ix_knowledge_chunks_search_vector", "search_vector", postgresql_using="gin"),
+        Index(
+            "ix_knowledge_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -73,6 +83,7 @@ class KnowledgeChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer)
     chunk_text: Mapped[str] = mapped_column(Text)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
     search_vector: Mapped[Any] = mapped_column(
         TSVECTOR, Computed("to_tsvector('english', chunk_text)", persisted=True), deferred=True
     )
@@ -84,6 +95,16 @@ class KnowledgeChunk(Base):
 KnowledgeDocument.chunk_count = column_property(
     select(func.count(KnowledgeChunk.id))
     .where(KnowledgeChunk.document_id == KnowledgeDocument.id)
+    .correlate_except(KnowledgeChunk)
+    .scalar_subquery()
+)
+
+KnowledgeDocument.embedded_chunk_count = column_property(
+    select(func.count(KnowledgeChunk.id))
+    .where(
+        KnowledgeChunk.document_id == KnowledgeDocument.id,
+        KnowledgeChunk.embedding.is_not(None),
+    )
     .correlate_except(KnowledgeChunk)
     .scalar_subquery()
 )

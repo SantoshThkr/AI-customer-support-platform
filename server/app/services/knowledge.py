@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -8,7 +9,10 @@ from pypdf import PdfReader
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.ai.client import AIError, ai_available, ensure_ai_available
+from app.ai.embeddings import embed_query, embed_texts
 from app.config import settings
+from app.database import SessionLocal
 from app.models import (
     DocumentFileType,
     DocumentStatus,
@@ -16,6 +20,8 @@ from app.models import (
     KnowledgeDocument,
     User,
 )
+
+logger = logging.getLogger(__name__)
 
 FILE_TYPES = {
     ".txt": DocumentFileType.TXT,
@@ -181,12 +187,14 @@ def create_document(
     if not text:
         raise _bad_request("No text could be extracted from this document")
 
+    # Embeddings are generated afterwards by embed_document(); without AI the
+    # document is still usable through keyword search.
     document = KnowledgeDocument(
         title=title.strip()[:200],
         filename=filename,
         file_type=file_type,
         content=text,
-        status=DocumentStatus.READY,
+        status=DocumentStatus.PROCESSING if ai_available(db) else DocumentStatus.READY,
         uploaded_by_id=uploaded_by.id if uploaded_by else None,
     )
     for index, chunk in enumerate(split_into_chunks(text)):
@@ -198,6 +206,65 @@ def create_document(
     db.commit()
     db.refresh(document)
     return document
+
+
+def embed_document(document_id: int) -> None:
+    """Background task: embed every chunk of a document. Failures mark the document FAILED."""
+    with SessionLocal() as db:
+        document = db.get(KnowledgeDocument, document_id)
+        if document is None:
+            return
+        try:
+            ensure_ai_available(db)
+            vectors = embed_texts(db, [chunk.chunk_text for chunk in document.chunks])
+        except AIError as exc:
+            logger.warning("Embedding document %s failed: %s", document_id, exc)
+            document.status = DocumentStatus.FAILED
+            document.error_message = (
+                f"Embeddings could not be generated ({exc}). Keyword search still works."
+            )
+            db.commit()
+            return
+
+        for chunk, vector in zip(document.chunks, vectors, strict=True):
+            chunk.embedding = vector
+        document.status = DocumentStatus.READY
+        document.error_message = None
+        db.commit()
+
+
+def semantic_search(db: Session, vector: list[float], limit: int = 5) -> list[SearchResult]:
+    distance = KnowledgeChunk.embedding.cosine_distance(vector)
+    rows = db.execute(
+        select(KnowledgeChunk, distance)
+        .options(joinedload(KnowledgeChunk.document))
+        .where(KnowledgeChunk.embedding.is_not(None))
+        .order_by(distance)
+        .limit(limit)
+    ).all()
+    return [SearchResult(chunk=chunk, score=1 - float(dist)) for chunk, dist in rows]
+
+
+def search_knowledge(
+    db: Session,
+    query: str,
+    limit: int = 5,
+    *,
+    use_ai: bool = True,
+    user_id: int | None = None,
+    ticket_id: int | None = None,
+) -> tuple[str, list[SearchResult]]:
+    """Semantic search when embeddings and AI are available, otherwise keyword search."""
+    has_embeddings = db.scalar(
+        select(KnowledgeChunk.id).where(KnowledgeChunk.embedding.is_not(None)).limit(1)
+    )
+    if use_ai and has_embeddings and ai_available(db):
+        try:
+            vector = embed_query(db, query, user_id=user_id, ticket_id=ticket_id)
+            return "semantic", semantic_search(db, vector, limit)
+        except AIError as exc:
+            logger.warning("Semantic search failed, using keyword search: %s", exc)
+    return "keyword", keyword_search(db, query, limit)
 
 
 def keyword_search(db: Session, query: str, limit: int = 5) -> list[SearchResult]:

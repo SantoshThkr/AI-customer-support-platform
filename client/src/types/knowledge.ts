@@ -11,6 +11,7 @@ export interface KnowledgeDocument {
   status: DocumentStatus
   error_message: string | null
   chunk_count: number
+  embedded_chunk_count: number
   uploaded_by: UserBrief | null
   created_at: string
   updated_at: string

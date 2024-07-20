@@ -1,6 +1,9 @@
 """A stand-in for the OpenAI client so tests never need a real API key."""
 
+import hashlib
 import json
+import math
+import re
 from types import SimpleNamespace
 
 import httpx
@@ -32,11 +35,42 @@ def timeout_error() -> openai.APITimeoutError:
     )
 
 
+STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "can",
+    "for",
+    "how",
+    "i",
+    "is",
+    "it",
+    "my",
+    "of",
+    "the",
+    "to",
+}
+
+
+def fake_embedding(text: str, dimensions: int = 1536) -> list[float]:
+    """Bag-of-words vector: texts that share words end up close together."""
+    vector = [0.0] * dimensions
+    for word in re.findall(r"[a-z]+", text.lower()):
+        if word not in STOP_WORDS:
+            vector[int(hashlib.md5(word.encode()).hexdigest(), 16) % dimensions] += 1.0
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
+
+
 class FakeOpenAI:
     def __init__(self):
         self.chat_responses: list = []
         self.chat_calls: list[dict] = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create_chat))
+        self.embedding_calls: list[dict] = []
+        self.embedding_error: Exception | None = None
+        self.embeddings = SimpleNamespace(create=self._create_embeddings)
 
     def queue(self, *responses) -> None:
         """Queue chat responses (or exceptions to raise) in the order they will be used."""
@@ -50,3 +84,16 @@ class FakeOpenAI:
         if isinstance(response, Exception):
             raise response
         return response
+
+    def _create_embeddings(self, *, model, input, dimensions):
+        self.embedding_calls.append({"model": model, "input": input, "dimensions": dimensions})
+        if self.embedding_error:
+            raise self.embedding_error
+        return SimpleNamespace(
+            model="text-embedding-3-small-test",
+            data=[
+                SimpleNamespace(index=index, embedding=fake_embedding(text, dimensions))
+                for index, text in enumerate(input)
+            ],
+            usage=SimpleNamespace(prompt_tokens=sum(len(text.split()) for text in input)),
+        )

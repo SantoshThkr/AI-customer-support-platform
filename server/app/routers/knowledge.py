@@ -1,5 +1,6 @@
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -12,9 +13,11 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.client import ensure_ai_available
 from app.database import get_db
+from app.dependencies.ai import ai_rate_limiter
 from app.dependencies.auth import require_admin, require_staff
-from app.models import DocumentFileType, KnowledgeDocument, User
+from app.models import DocumentFileType, DocumentStatus, KnowledgeDocument, User
 from app.schemas.knowledge import DocumentDetail, DocumentOut, SearchResponse, SearchResultOut
 from app.services import knowledge as knowledge_service
 
@@ -30,6 +33,7 @@ def _get_document(db: Session, document_id: int) -> KnowledgeDocument:
 
 @router.post("/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 def create_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile | None = File(default=None),
     title: str | None = Form(default=None, max_length=200),
     content: str | None = Form(default=None, max_length=200_000),
@@ -54,6 +58,8 @@ def create_document(
     document = knowledge_service.create_document(
         db, title=title, text=text, file_type=file_type, filename=filename, uploaded_by=user
     )
+    if document.status == DocumentStatus.PROCESSING:
+        background_tasks.add_task(knowledge_service.embed_document, document.id)
     return document
 
 
@@ -65,6 +71,24 @@ def list_documents(db: Session = Depends(get_db), _: User = Depends(require_staf
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
 def get_document(document_id: int, db: Session = Depends(get_db), _: User = Depends(require_staff)):
     return _get_document(db, document_id)
+
+
+@router.post("/documents/{document_id}/embed", response_model=DocumentOut)
+def regenerate_embeddings(
+    document_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Retry embedding a document, e.g. after a failure or after AI was switched on."""
+    document = _get_document(db, document_id)
+    ensure_ai_available(db)
+    document.status = DocumentStatus.PROCESSING
+    document.error_message = None
+    db.commit()
+    background_tasks.add_task(knowledge_service.embed_document, document.id)
+    db.refresh(document)
+    return document
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -81,11 +105,15 @@ def search_knowledge(
     q: str = Query(min_length=2, max_length=500),
     limit: int = Query(default=5, ge=1, le=20),
     db: Session = Depends(get_db),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
 ):
-    results = knowledge_service.keyword_search(db, q, limit)
+    # Semantic search costs an embedding call, so it counts towards the AI rate
+    # limit; once the limit is hit, agents still get keyword results.
+    mode, results = knowledge_service.search_knowledge(
+        db, q, limit, use_ai=ai_rate_limiter.allow(user.id), user_id=user.id
+    )
     return SearchResponse(
-        mode="keyword",
+        mode=mode,
         results=[
             SearchResultOut(
                 chunk_id=result.chunk.id,
