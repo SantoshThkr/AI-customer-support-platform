@@ -7,7 +7,9 @@ import AIActions from '../components/ticket/AIActions'
 import AssignControl from '../components/ticket/AssignControl'
 import KnowledgePanel from '../components/ticket/KnowledgePanel'
 import Conversation from '../components/ticket/Conversation'
+import CopilotPanel from '../components/ticket/CopilotPanel'
 import ReplyBox from '../components/ticket/ReplyBox'
+import SuggestionPanel from '../components/ticket/SuggestionPanel'
 import TicketHistory from '../components/ticket/TicketHistory'
 import TicketProperties from '../components/ticket/TicketProperties'
 import { useAuth } from '../context/AuthContext'
@@ -28,6 +30,8 @@ export default function TicketDetailPage() {
   const [events, setEvents] = useState<TicketEvent[]>([])
   const [messages, setMessages] = useState<TicketMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [noteMode, setNoteMode] = useState(false)
+  const [draftFromAI, setDraftFromAI] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -70,9 +74,16 @@ export default function TicketDetailPage() {
     setEvents(eventData)
   }
 
+  const applySuggestion = (text: string) => {
+    setDraft(text)
+    setNoteMode(false)
+    setDraftFromAI(true)
+  }
+
   const sendMessage = async (text: string, isInternal: boolean) => {
     const message = await addMessage(ticketId, text, isInternal)
     setMessages((current) => [...current, message])
+    setDraftFromAI(false)
     // A customer reply can reopen the ticket, so refresh the status and history.
     await reloadTicket()
   }
@@ -142,14 +153,24 @@ export default function TicketDetailPage() {
             <Conversation ticket={ticket} messages={messages} />
           </section>
 
+          {isStaff && canWorkOn && aiStatus?.available && (
+            <SuggestionPanel ticketId={ticket.id} onUse={applySuggestion} />
+          )}
+
           {isStaff || !isClosed ? (
             <ReplyBox
               draft={draft}
-              onDraftChange={setDraft}
+              onDraftChange={(value) => {
+                setDraft(value)
+                if (!value) setDraftFromAI(false)
+              }}
               onSend={sendMessage}
+              noteMode={noteMode}
+              onNoteModeChange={setNoteMode}
               allowInternal={isStaff}
               canReply={!isStaff || canWorkOn}
               disabledReason="This ticket is assigned to another agent. You can still leave an internal note."
+              notice={draftFromAI ? 'This draft was written by AI. Review and edit it before sending.' : undefined}
             />
           ) : (
             <Alert kind="info">This ticket is closed. If you still need help, please open a new ticket.</Alert>
@@ -208,6 +229,13 @@ export default function TicketDetailPage() {
             <section className="card space-y-3 p-4">
               <h2 className="text-sm font-semibold">AI assistant</h2>
               <AIActions ticketId={ticket.id} status={aiStatus} onChanged={() => reloadTicket().catch(() => undefined)} />
+            </section>
+          )}
+
+          {isStaff && aiStatus?.available && (
+            <section className="card space-y-3 p-4">
+              <h2 className="text-sm font-semibold">Ask the assistant</h2>
+              <CopilotPanel ticketId={ticket.id} />
             </section>
           )}
 

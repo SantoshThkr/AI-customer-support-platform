@@ -1,16 +1,37 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.ai import ticket_analysis
+from app.ai import response_suggestions, ticket_analysis
 from app.ai.client import AIUnavailableError, ensure_ai_available
 from app.database import get_db
 from app.dependencies.ai import ai_request_user
 from app.dependencies.auth import require_staff
 from app.dependencies.tickets import get_accessible_ticket
-from app.models import Ticket, User
-from app.schemas.ai import AIStatus, SummaryOut, TicketAnalysisOut
+from app.models import AIOperation, Ticket, User
+from app.schemas.ai import (
+    AIStatus,
+    CopilotOut,
+    CopilotRequest,
+    SourceOut,
+    SuggestionOut,
+    SuggestionRequest,
+    SummaryOut,
+    TicketAnalysisOut,
+)
+from app.services.knowledge import SearchResult
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+
+def source_list(results: list[SearchResult]) -> list[SourceOut]:
+    return [
+        SourceOut(
+            document_id=result.chunk.document_id,
+            document_title=result.chunk.document.title,
+            section=result.chunk.metadata_.get("section"),
+        )
+        for result in results
+    ]
 
 
 @router.get("/status", response_model=AIStatus)
@@ -38,3 +59,32 @@ def summarize_ticket(
     user: User = Depends(ai_request_user),
 ):
     return SummaryOut(summary=ticket_analysis.summarize_ticket(db, ticket, user))
+
+
+@router.post("/tickets/{ticket_id}/suggest-response", response_model=SuggestionOut)
+def suggest_response(
+    payload: SuggestionRequest | None = None,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(ai_request_user),
+):
+    """Draft a reply for the agent to review. Nothing is sent to the customer."""
+    instructions = payload.instructions if payload else None
+    prepared = response_suggestions.prepare_suggestion(db, ticket, user, instructions)
+    suggestion = response_suggestions.complete(
+        db, prepared, AIOperation.SUGGESTED_RESPONSE, ticket, user
+    )
+    return SuggestionOut(suggestion=suggestion, sources=source_list(prepared.sources))
+
+
+@router.post("/tickets/{ticket_id}/copilot", response_model=CopilotOut)
+def ask_copilot(
+    payload: CopilotRequest,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(ai_request_user),
+):
+    history = [turn.model_dump() for turn in payload.history]
+    prepared = response_suggestions.prepare_copilot(db, ticket, user, payload.question, history)
+    answer = response_suggestions.complete(db, prepared, AIOperation.COPILOT, ticket, user)
+    return CopilotOut(answer=answer, sources=source_list(prepared.sources))

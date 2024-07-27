@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent } from 'react'
 import { getErrorMessage } from '../../utils/errors'
 import Alert from '../Alert'
 
@@ -7,18 +7,29 @@ interface Props {
   draft: string
   onDraftChange: (value: string) => void
   onSend: (message: string, isInternal: boolean) => Promise<void>
+  noteMode: boolean
+  onNoteModeChange: (value: boolean) => void
   allowInternal: boolean
   canReply: boolean
   disabledReason?: string
-  toolbar?: ReactNode
+  notice?: string
 }
 
-export default function ReplyBox({ draft, onDraftChange, onSend, allowInternal, canReply, disabledReason, toolbar }: Props) {
-  const [internal, setInternal] = useState(!canReply && allowInternal)
+export default function ReplyBox({
+  draft,
+  onDraftChange,
+  onSend,
+  noteMode,
+  onNoteModeChange,
+  allowInternal,
+  canReply,
+  disabledReason,
+  notice,
+}: Props) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isInternal = allowInternal && (internal || !canReply)
+  const isInternal = allowInternal && (noteMode || !canReply)
   const blocked = !isInternal && !canReply
 
   const submit = async (event: FormEvent) => {
@@ -45,7 +56,7 @@ export default function ReplyBox({ draft, onDraftChange, onSend, allowInternal, 
             role="tab"
             aria-selected={!isInternal}
             disabled={!canReply}
-            onClick={() => setInternal(false)}
+            onClick={() => onNoteModeChange(false)}
             className={`rounded-md px-3 py-1.5 ${!isInternal ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'} disabled:opacity-50`}
           >
             Reply to customer
@@ -54,7 +65,7 @@ export default function ReplyBox({ draft, onDraftChange, onSend, allowInternal, 
             type="button"
             role="tab"
             aria-selected={isInternal}
-            onClick={() => setInternal(true)}
+            onClick={() => onNoteModeChange(true)}
             className={`rounded-md px-3 py-1.5 ${isInternal ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             Internal note
@@ -63,21 +74,25 @@ export default function ReplyBox({ draft, onDraftChange, onSend, allowInternal, 
       )}
       {error && <Alert>{error}</Alert>}
       {blocked && disabledReason && <Alert kind="info">{disabledReason}</Alert>}
+      {notice && !isInternal && <Alert kind="info">{notice}</Alert>}
       <label htmlFor="reply" className="sr-only">
         {isInternal ? 'Internal note' : 'Reply'}
       </label>
       <textarea
         id="reply"
-        rows={5}
+        rows={isInternal ? 4 : 7}
         className="input"
         placeholder={isInternal ? 'Only visible to the support team…' : 'Write your reply…'}
         value={draft}
         disabled={blocked}
         onChange={(event) => onDraftChange(event.target.value)}
       />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">{toolbar}</div>
-        <button type="submit" className={isInternal ? 'btn bg-amber-500 text-white hover:bg-amber-600' : 'btn-primary'} disabled={sending || blocked || !draft.trim()}>
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          className={isInternal ? 'btn bg-amber-500 text-white hover:bg-amber-600' : 'btn-primary'}
+          disabled={sending || blocked || !draft.trim()}
+        >
           {sending ? 'Sending…' : isInternal ? 'Add note' : 'Send reply'}
         </button>
       </div>
