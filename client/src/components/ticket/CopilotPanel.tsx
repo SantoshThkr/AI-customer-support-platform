@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { askCopilot } from '../../services/ai'
+import { streamCopilot } from '../../services/ai'
 import type { AISource, CopilotTurn } from '../../types/ai'
 import { getErrorMessage } from '../../utils/errors'
 import Alert from '../Alert'
@@ -15,25 +15,45 @@ const MAX_HISTORY = 6
 export default function CopilotPanel({ ticketId }: { ticketId: number }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [question, setQuestion] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const updateAnswer = (change: (turn: Turn) => Turn) =>
+    setTurns((current) => [...current.slice(0, -1), change(current[current.length - 1])])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const text = question.trim()
-    if (!text || loading) return
-    const history = turns.slice(-MAX_HISTORY).map(({ role, content }) => ({ role, content }))
-    setTurns((current) => [...current, { role: 'user', content: text }])
+    if (!text || streaming) return
+
+    // Only completed exchanges are sent back as history.
+    const history = turns
+      .filter((turn) => turn.content)
+      .slice(-MAX_HISTORY)
+      .map(({ role, content }) => ({ role, content }))
+    setTurns((current) => [...current, { role: 'user', content: text }, { role: 'assistant', content: '' }])
     setQuestion('')
-    setLoading(true)
     setError(null)
+    setStreaming(true)
+
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
-      const answer = await askCopilot(ticketId, text, history)
-      setTurns((current) => [...current, { role: 'assistant', content: answer.answer, sources: answer.sources }])
+      await streamCopilot(ticketId, text, history, {
+        onSources: (sources) => updateAnswer((turn) => ({ ...turn, sources })),
+        onText: (chunk) => updateAnswer((turn) => ({ ...turn, content: turn.content + chunk })),
+        signal: controller.signal,
+      })
     } catch (err) {
-      setError(getErrorMessage(err, 'The assistant could not answer'))
+      if (!controller.signal.aborted) {
+        setError(getErrorMessage(err, 'The assistant could not answer'))
+        setTurns((current) => (current[current.length - 1]?.content ? current : current.slice(0, -1)))
+      }
     } finally {
-      setLoading(false)
+      setStreaming(false)
     }
   }
 
@@ -51,11 +71,12 @@ export default function CopilotPanel({ ticketId }: { ticketId: number }) {
             key={index}
             className={`rounded-md p-2 text-sm ${turn.role === 'user' ? 'ml-6 bg-slate-100' : 'mr-2 bg-indigo-50/70'}`}
           >
-            <p className="whitespace-pre-wrap">{turn.content}</p>
-            {turn.sources && <SourceList sources={turn.sources} />}
+            <p className="whitespace-pre-wrap">
+              {turn.content || (streaming && index === turns.length - 1 ? <span className="text-slate-500">Thinking…</span> : null)}
+            </p>
+            {turn.sources && turn.content && <SourceList sources={turn.sources} />}
           </li>
         ))}
-        {loading && <li className="text-sm text-slate-500">Thinking…</li>}
       </ol>
       {error && <Alert>{error}</Alert>}
       <form onSubmit={submit} className="flex gap-2">
@@ -66,7 +87,7 @@ export default function CopilotPanel({ ticketId }: { ticketId: number }) {
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
         />
-        <button type="submit" className="btn-secondary" disabled={loading || !question.trim()}>
+        <button type="submit" className="btn-secondary" disabled={streaming || !question.trim()}>
           Ask
         </button>
       </form>

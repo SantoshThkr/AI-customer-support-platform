@@ -18,6 +18,37 @@ def chat_response(content: str | None, prompt_tokens=120, completion_tokens=30):
     )
 
 
+def stream_chunks(pieces: list[str], prompt_tokens=200, completion_tokens=40, fail_after=None):
+    """Chunks shaped like a streamed chat completion; the last one carries usage."""
+
+    def chunks():
+        for index, piece in enumerate(pieces):
+            if fail_after is not None and index == fail_after:
+                raise openai.APIConnectionError(
+                    request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+                )
+            yield SimpleNamespace(
+                model="gpt-4o-mini-test",
+                usage=None,
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=piece))],
+            )
+        yield SimpleNamespace(
+            model="gpt-4o-mini-test",
+            usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens),
+            choices=[],
+        )
+
+    return chunks()
+
+
+def parse_sse(body: str) -> list[tuple[str, dict]]:
+    events = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
+
+
 def analysis_json(**overrides) -> str:
     data = {
         "category": "ACCOUNT",

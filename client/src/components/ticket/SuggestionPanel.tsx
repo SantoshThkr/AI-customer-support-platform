@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { suggestResponse } from '../../services/ai'
-import type { Suggestion } from '../../types/ai'
+import { useEffect, useRef, useState } from 'react'
+import { streamSuggestion } from '../../services/ai'
+import type { AISource } from '../../types/ai'
 import { getErrorMessage } from '../../utils/errors'
 import Alert from '../Alert'
 import SourceList from './SourceList'
@@ -12,21 +12,43 @@ interface Props {
 
 export default function SuggestionPanel({ ticketId, onUse }: Props) {
   const [instructions, setInstructions] = useState('')
-  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [text, setText] = useState('')
+  const [sources, setSources] = useState<AISource[]>([])
+  const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const generate = async () => {
-    setLoading(true)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setText('')
+    setSources([])
     setError(null)
-    setSuggestion(null)
+    setStreaming(true)
     try {
-      setSuggestion(await suggestResponse(ticketId, instructions.trim()))
+      await streamSuggestion(ticketId, instructions.trim(), {
+        onSources: setSources,
+        onText: (chunk) => setText((current) => current + chunk),
+        signal: controller.signal,
+      })
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not generate a suggestion'))
+      if (!controller.signal.aborted) {
+        setError(getErrorMessage(err, 'Could not generate a suggestion'))
+      }
     } finally {
-      setLoading(false)
+      if (abortRef.current === controller) setStreaming(false)
     }
+  }
+
+  const discard = () => {
+    abortRef.current?.abort()
+    setText('')
+    setSources([])
+    setError(null)
+    setStreaming(false)
   }
 
   return (
@@ -39,33 +61,46 @@ export default function SuggestionPanel({ ticketId, onUse }: Props) {
           value={instructions}
           onChange={(event) => setInstructions(event.target.value)}
         />
-        <button type="button" className="btn-secondary" onClick={generate} disabled={loading}>
-          {loading ? 'Generating…' : suggestion ? 'Regenerate' : 'Suggest reply'}
-        </button>
+        {streaming ? (
+          <button type="button" className="btn-secondary" onClick={discard}>
+            Stop
+          </button>
+        ) : (
+          <button type="button" className="btn-secondary" onClick={generate}>
+            {text ? 'Regenerate' : 'Suggest reply'}
+          </button>
+        )}
       </div>
       {error && <Alert>{error}</Alert>}
-      {suggestion && (
+      {(text || streaming) && (
         <div className="space-y-2">
-          <div className="whitespace-pre-wrap rounded-md bg-indigo-50/60 p-3 text-sm leading-relaxed" data-testid="suggestion">
-            {suggestion.suggestion}
+          <div
+            className="min-h-[3rem] whitespace-pre-wrap rounded-md bg-indigo-50/60 p-3 text-sm leading-relaxed"
+            data-testid="suggestion"
+            aria-busy={streaming}
+          >
+            {text || <span className="text-slate-500">Drafting a reply…</span>}
+            {streaming && text && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-indigo-400 align-middle" />}
           </div>
-          <SourceList sources={suggestion.sources} />
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                onUse(suggestion.suggestion)
-                setSuggestion(null)
-              }}
-            >
-              Use suggestion
-            </button>
-            <button type="button" className="btn-secondary" onClick={() => setSuggestion(null)}>
-              Discard
-            </button>
-            <span className="text-xs text-slate-500">You can edit it in the reply box before sending.</span>
-          </div>
+          <SourceList sources={sources} />
+          {!streaming && text && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  onUse(text)
+                  discard()
+                }}
+              >
+                Use suggestion
+              </button>
+              <button type="button" className="btn-secondary" onClick={discard}>
+                Discard
+              </button>
+              <span className="text-xs text-slate-500">You can edit it in the reply box before sending.</span>
+            </div>
+          )}
         </div>
       )}
     </section>

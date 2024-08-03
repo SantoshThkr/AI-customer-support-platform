@@ -23,17 +23,7 @@ export interface AISource {
   section: string | null
 }
 
-export interface Suggestion {
-  suggestion: string
-  sources: AISource[]
-}
-
 export interface CopilotTurn {
   role: 'user' | 'assistant'
   content: string
-}
-
-export interface CopilotAnswer {
-  answer: string
-  sources: AISource[]
 }

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.ai import response_suggestions, ticket_analysis
@@ -21,6 +22,8 @@ from app.schemas.ai import (
 from app.services.knowledge import SearchResult
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 def source_list(results: list[SearchResult]) -> list[SourceOut]:
@@ -88,3 +91,43 @@ def ask_copilot(
     prepared = response_suggestions.prepare_copilot(db, ticket, user, payload.question, history)
     answer = response_suggestions.complete(db, prepared, AIOperation.COPILOT, ticket, user)
     return CopilotOut(answer=answer, sources=source_list(prepared.sources))
+
+
+@router.post("/tickets/{ticket_id}/suggest-response/stream")
+def stream_suggested_response(
+    payload: SuggestionRequest | None = None,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(ai_request_user),
+):
+    """Same as suggest-response, streamed as Server-Sent Events:
+    `sources`, then `delta` events with text, then `done` (or `error`)."""
+    instructions = payload.instructions if payload else None
+    prepared = response_suggestions.prepare_suggestion(db, ticket, user, instructions)
+    events = response_suggestions.stream_completion(
+        prepared,
+        operation=AIOperation.SUGGESTED_RESPONSE,
+        ticket_id=ticket.id,
+        user_id=user.id,
+        sources=[source.model_dump() for source in source_list(prepared.sources)],
+    )
+    return StreamingResponse(events, media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+@router.post("/tickets/{ticket_id}/copilot/stream")
+def stream_copilot(
+    payload: CopilotRequest,
+    ticket: Ticket = Depends(get_accessible_ticket),
+    db: Session = Depends(get_db),
+    user: User = Depends(ai_request_user),
+):
+    history = [turn.model_dump() for turn in payload.history]
+    prepared = response_suggestions.prepare_copilot(db, ticket, user, payload.question, history)
+    events = response_suggestions.stream_completion(
+        prepared,
+        operation=AIOperation.COPILOT,
+        ticket_id=ticket.id,
+        user_id=user.id,
+        sources=[source.model_dump() for source in source_list(prepared.sources)],
+    )
+    return StreamingResponse(events, media_type="text/event-stream", headers=SSE_HEADERS)

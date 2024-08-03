@@ -73,7 +73,13 @@ def chat_completion(
     json_schema: dict | None = None,
     max_tokens: int = 500,
     temperature: float = 0.2,
+    stream: bool = False,
 ):
+    """Call the chat completions API.
+
+    With stream=True the connection is opened here, so auth/rate-limit errors are
+    raised before the caller starts sending a streaming response.
+    """
     client = get_client()
     params = {
         "model": settings.openai_chat_model,
@@ -83,6 +89,9 @@ def chat_completion(
     }
     if json_schema:
         params["response_format"] = {"type": "json_schema", "json_schema": json_schema}
+    if stream:
+        params["stream"] = True
+        params["stream_options"] = {"include_usage": True}
 
     try:
         return client.chat.completions.create(**params)

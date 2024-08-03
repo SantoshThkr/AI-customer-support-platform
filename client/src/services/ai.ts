@@ -1,5 +1,6 @@
-import api from './api'
-import type { AIStatus, CopilotAnswer, CopilotTurn, Suggestion, TicketAnalysis } from '../types/ai'
+import api, { API_BASE_URL, tokenStorage } from './api'
+import { parseSSE } from '../utils/sse'
+import type { AISource, AIStatus, CopilotTurn, TicketAnalysis } from '../types/ai'
 
 export async function getAIStatus() {
   const { data } = await api.get<AIStatus>('/ai/status')
@@ -16,14 +17,49 @@ export async function summarizeTicket(ticketId: number) {
   return data.summary
 }
 
-export async function suggestResponse(ticketId: number, instructions?: string) {
-  const { data } = await api.post<Suggestion>(`/ai/tickets/${ticketId}/suggest-response`, {
-    instructions: instructions || null,
-  })
-  return data
+export interface StreamHandlers {
+  onSources?: (sources: AISource[]) => void
+  onText: (text: string) => void
+  signal?: AbortSignal
 }
 
-export async function askCopilot(ticketId: number, question: string, history: CopilotTurn[]) {
-  const { data } = await api.post<CopilotAnswer>(`/ai/tickets/${ticketId}/copilot`, { question, history })
-  return data
+// Axios can't read a streamed response body in the browser, so streaming uses fetch.
+async function streamAI(path: string, body: unknown, { onSources, onText, signal }: StreamHandlers) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${tokenStorage.get() ?? ''}`,
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => null)
+    throw new Error(data?.detail ?? `Request failed (${response.status})`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    const parsed = parseSSE(buffer + decoder.decode(value, { stream: true }))
+    buffer = parsed.rest
+    for (const { event, data } of parsed.events) {
+      const payload = data as { sources?: AISource[]; text?: string; detail?: string }
+      if (event === 'sources') onSources?.(payload.sources ?? [])
+      else if (event === 'delta') onText(payload.text ?? '')
+      else if (event === 'error') throw new Error(payload.detail ?? 'The AI response was interrupted')
+    }
+  }
+}
+
+export function streamSuggestion(ticketId: number, instructions: string, handlers: StreamHandlers) {
+  return streamAI(`/ai/tickets/${ticketId}/suggest-response/stream`, { instructions: instructions || null }, handlers)
+}
+
+export function streamCopilot(ticketId: number, question: string, history: CopilotTurn[], handlers: StreamHandlers) {
+  return streamAI(`/ai/tickets/${ticketId}/copilot/stream`, { question, history }, handlers)
 }
