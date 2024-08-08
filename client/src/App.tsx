@@ -11,6 +11,7 @@ import NotFoundPage from './pages/NotFoundPage'
 import RegisterPage from './pages/RegisterPage'
 import TicketDetailPage from './pages/TicketDetailPage'
 import TicketsPage from './pages/TicketsPage'
+import AIUsagePage from './pages/admin/AIUsagePage'
 import AnalyticsPage from './pages/admin/AnalyticsPage'
 import SettingsPage from './pages/admin/SettingsPage'
 import UsersPage from './pages/admin/UsersPage'
@@ -36,6 +37,7 @@ export default function App() {
             </Route>
             <Route element={<ProtectedRoute roles={['ADMIN']} />}>
               <Route path="/admin" element={<AnalyticsPage />} />
+              <Route path="/admin/ai-usage" element={<AIUsagePage />} />
               <Route path="/admin/users" element={<UsersPage />} />
               <Route path="/admin/settings" element={<SettingsPage />} />
             </Route>

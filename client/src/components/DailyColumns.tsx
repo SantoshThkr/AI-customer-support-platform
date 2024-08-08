@@ -11,7 +11,7 @@ function shortDate(date: string) {
   return formatDate(`${date}T12:00:00`).replace(/,? \d{4}$/, '')
 }
 
-export default function DailyColumns({ days }: { days: Day[] }) {
+export default function DailyColumns({ days, unit = 'ticket' }: { days: Day[]; unit?: string }) {
   const max = Math.max(...days.map((day) => day.count), 1)
   const peak = days.reduce((best, day) => (day.count > best.count ? day : best), days[0])
   const labelled = new Set([days[0]?.date, days[days.length - 1]?.date])
@@ -28,7 +28,7 @@ export default function DailyColumns({ days }: { days: Day[] }) {
               )}
               <div className="w-full max-w-[24px] rounded-t bg-indigo-500" style={{ height }} />
               <div className="pointer-events-none absolute bottom-full z-10 mb-1 hidden whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-xs text-white group-hover:block">
-                {shortDate(day.date)}: {day.count} {day.count === 1 ? 'ticket' : 'tickets'}
+                {shortDate(day.date)}: {day.count} {day.count === 1 ? unit : `${unit}s`}
               </div>
             </div>
           )
@@ -42,7 +42,7 @@ export default function DailyColumns({ days }: { days: Day[] }) {
         ))}
       </div>
       <table className="sr-only">
-        <caption>Tickets created per day</caption>
+        <caption>{unit}s per day</caption>
         <tbody>
           {days.map((day) => (
             <tr key={day.date}>

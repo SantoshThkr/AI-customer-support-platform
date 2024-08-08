@@ -35,7 +35,7 @@ export default function AnalyticsPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Analytics</h1>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Total tickets" value={data.total_tickets.toLocaleString()} />
         <StatCard label="Open tickets" value={data.open_tickets.toLocaleString()} to="/dashboard?queue=open" />
         <StatCard label="Resolved tickets" value={data.resolved_tickets.toLocaleString()} />
@@ -43,6 +43,12 @@ export default function AnalyticsPage() {
           label="Average resolution time"
           value={formatHours(data.average_resolution_hours)}
           hint="From creation to resolved/closed"
+        />
+        <StatCard
+          label="AI requests"
+          value={data.ai_requests_last_30_days.toLocaleString()}
+          hint="Last 30 days"
+          to="/admin/ai-usage"
         />
       </div>
 

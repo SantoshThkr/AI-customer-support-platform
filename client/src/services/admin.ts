@@ -1,6 +1,6 @@
 import api from './api'
 import type { SystemSettings } from '../types/ai'
-import type { Analytics } from '../types/analytics'
+import type { AIUsageReport, Analytics } from '../types/analytics'
 
 export async function getAnalytics() {
   const { data } = await api.get<Analytics>('/admin/analytics')
@@ -14,5 +14,10 @@ export async function getSystemSettings() {
 
 export async function updateSystemSettings(changes: Partial<SystemSettings>) {
   const { data } = await api.patch<SystemSettings>('/admin/settings', changes)
+  return data
+}
+
+export async function getAIUsage(days: number) {
+  const { data } = await api.get<AIUsageReport>('/admin/ai-usage', { params: { days } })
   return data
 }
