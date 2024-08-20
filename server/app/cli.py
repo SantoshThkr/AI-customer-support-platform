@@ -2,6 +2,7 @@
 
 python -m app.cli create-user --email admin@example.com --name "Admin" --role ADMIN
 python -m app.cli import-knowledge sample_data/knowledge
+python -m app.cli seed-demo
 """
 
 import argparse
@@ -69,6 +70,29 @@ def import_knowledge_command(args: argparse.Namespace) -> int:
     return 0
 
 
+DEMO_USERS = [
+    ("admin@example.com", "Ada Admin", UserRole.ADMIN),
+    ("agent@example.com", "Alex Agent", UserRole.AGENT),
+    ("customer@example.com", "John Carter", UserRole.CUSTOMER),
+]
+
+
+def seed_demo_command(args: argparse.Namespace) -> int:
+    """Create one account per role and load the sample articles. For local use only."""
+    with SessionLocal() as db:
+        for email, name, role in DEMO_USERS:
+            try:
+                create_user(db, email=email, name=name, password=args.password, role=role)
+                print(f"Created {role.value.lower()} {email}")
+            except HTTPException:
+                print(f"skip   {email} (already exists)")
+
+    sample_folder = Path(__file__).resolve().parent.parent / "sample_data" / "knowledge"
+    import_knowledge_command(argparse.Namespace(folder=str(sample_folder)))
+    print(f"\nDemo password for all accounts: {args.password}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -85,6 +109,12 @@ def main() -> int:
     )
     importer.add_argument("folder")
     importer.set_defaults(handler=import_knowledge_command)
+
+    demo = subcommands.add_parser(
+        "seed-demo", help="Create demo admin/agent/customer accounts and sample articles"
+    )
+    demo.add_argument("--password", default="password123")
+    demo.set_defaults(handler=seed_demo_command)
 
     args = parser.parse_args()
     return args.handler(args)

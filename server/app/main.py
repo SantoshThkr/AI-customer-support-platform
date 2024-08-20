@@ -14,7 +14,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Customer Support API", version="0.1.0")
+app = FastAPI(
+    title="Customer Support API",
+    version="0.1.0",
+    # Served under /api so the docs also work through the frontend's proxy.
+    docs_url="/api/docs",
+    redoc_url=None,
+    openapi_url="/api/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
