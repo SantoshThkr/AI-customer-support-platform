@@ -10,6 +10,10 @@ ignore = ["B008"]  # FastAPI uses function calls (Depends, Query) in argument de
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    # Raised inside Starlette's TestClient with newer AnyIO releases.
+    "ignore:The `?anyio.abc.BlockingPortal`? alias is deprecated:DeprecationWarning",
+]
 
 [tool.ruff.lint.isort]
 known-third-party = ["alembic"]

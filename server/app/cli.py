@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import KnowledgeDocument, UserRole
+from app.models import DocumentStatus, KnowledgeDocument, UserRole
 from app.services import knowledge as knowledge_service
 from app.services.users import create_user
 
@@ -66,7 +66,11 @@ def import_knowledge_command(args: argparse.Namespace) -> int:
             except HTTPException as exc:
                 print(f"error  {path.name}: {exc.detail}", file=sys.stderr)
                 continue
-            print(f"added  {path.name} ({document.chunk_count} chunks)")
+            if document.status == DocumentStatus.PROCESSING:
+                # The API embeds in a background task; here we can simply wait.
+                knowledge_service.embed_document(document.id)
+                db.refresh(document)
+            print(f"added  {path.name} ({document.chunk_count} chunks, {document.status.value})")
     return 0
 
 
